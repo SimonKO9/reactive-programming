@@ -3,16 +3,15 @@
  */
 package actorbintree
 
-import akka.actor.{ Props, ActorRef, ActorSystem }
-import org.scalatest.{ BeforeAndAfterAll, FlatSpec }
-import akka.testkit.{ TestProbe, ImplicitSender, TestKit }
+import akka.actor.{Props, ActorRef, ActorSystem}
+import org.scalatest.{BeforeAndAfterAll, FlatSpec}
+import akka.testkit.{TestProbe, ImplicitSender, TestKit}
 import org.scalatest.Matchers
 import scala.util.Random
 import scala.concurrent.duration._
 import org.scalatest.FunSuiteLike
 
-class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSuiteLike with Matchers with BeforeAndAfterAll with ImplicitSender
-{
+class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSuiteLike with Matchers with BeforeAndAfterAll with ImplicitSender {
 
   def this() = this(ActorSystem("BinaryTreeSuite"))
 
@@ -26,7 +25,7 @@ class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSui
         requester.expectMsgType[OperationReply]
       } catch {
         case ex: Throwable if ops.size > 10 => fail(s"failure to receive confirmation $i/${ops.size}", ex)
-        case ex: Throwable                  => fail(s"failure to receive confirmation $i/${ops.size}\nRequests:" + ops.mkString("\n    ", "\n     ", ""), ex)
+        case ex: Throwable => fail(s"failure to receive confirmation $i/${ops.size}\nRequests:" + ops.mkString("\n    ", "\n     ", ""), ex)
       }
       val replies = repliesUnsorted.sortBy(_.id)
       if (replies != expectedReplies) {
@@ -46,6 +45,36 @@ class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSui
     // the grader also verifies that enough actors are created
   }
 
+  test("test initial") {
+    val topNode = system.actorOf(Props[BinaryTreeSet])
+
+    topNode ! Contains(testActor, id = 1, 0)
+    expectMsg(ContainsResult(1, false))
+  }
+
+  test("test add node equal to initial") {
+    val topNode = system.actorOf(Props[BinaryTreeSet])
+
+    topNode ! Insert(testActor, id = 1, elem = 0)
+    expectMsg(OperationFinished(id = 1))
+
+    topNode ! Contains(testActor, id = 2, elem = 0)
+    expectMsg(ContainsResult(id = 2, result = true))
+  }
+
+  test("test add multiple nodes") {
+    val topNode = system.actorOf(Props[BinaryTreeSet])
+
+    for (i <- 1 to 10) {
+      val id = i * 2
+      topNode ! Insert(testActor, id, i)
+      expectMsg(OperationFinished(id))
+
+      topNode ! Contains(testActor, id + 1, i)
+      expectMsg(ContainsResult(id + 1, true))
+    }
+  }
+
   test("proper inserts and lookups") {
     val topNode = system.actorOf(Props[BinaryTreeSet])
 
@@ -59,26 +88,80 @@ class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSui
     expectMsg(ContainsResult(3, true))
   }
 
+  test("contains is repeateble after GC for empty tree") {
+    val topNode = system.actorOf(Props[BinaryTreeSet])
+
+    topNode ! Contains(testActor, id = 1, 1)
+    expectMsg(ContainsResult(1, false))
+
+    topNode ! GC
+
+    topNode ! Contains(testActor, id = 3, 1)
+    expectMsg(ContainsResult(3, false))
+  }
+
+  test("contains is repeateble after GC for tree with single node") {
+    val topNode = system.actorOf(Props[BinaryTreeSet])
+
+    topNode ! Insert(testActor, 1, 5)
+    expectMsg(OperationFinished(1))
+
+    topNode ! Contains(testActor, 4, 5)
+    expectMsg(ContainsResult(4, true))
+
+    topNode ! GC
+
+    topNode ! Contains(testActor, 7, 5)
+    expectMsg(ContainsResult(7, true))
+  }
+
+  test("contains is repeateble after GC for tree with multiple nodes") {
+    val topNode = system.actorOf(Props[BinaryTreeSet])
+
+    topNode ! Insert(testActor, 1, 5)
+    topNode ! Insert(testActor, 2, 2)
+    topNode ! Insert(testActor, 3, 10)
+    expectMsg(OperationFinished(1))
+    expectMsg(OperationFinished(2))
+    expectMsg(OperationFinished(3))
+
+    topNode ! Contains(testActor, 4, 5)
+    topNode ! Contains(testActor, 5, 2)
+    topNode ! Contains(testActor, 6, 10)
+    expectMsg(ContainsResult(4, true))
+    expectMsg(ContainsResult(5, true))
+    expectMsg(ContainsResult(6, true))
+
+    topNode ! GC
+
+    topNode ! Contains(testActor, 7, 5)
+    topNode ! Contains(testActor, 8, 2)
+    topNode ! Contains(testActor, 9, 10)
+    expectMsg(ContainsResult(7, true))
+    expectMsg(ContainsResult(8, true))
+    expectMsg(ContainsResult(9, true))
+  }
+
   test("instruction example") {
     val requester = TestProbe()
     val requesterRef = requester.ref
     val ops = List(
-      Insert(requesterRef, id=100, 1),
-      Contains(requesterRef, id=50, 2),
-      Remove(requesterRef, id=10, 1),
-      Insert(requesterRef, id=20, 2),
-      Contains(requesterRef, id=80, 1),
-      Contains(requesterRef, id=70, 2)
-      )
+      Insert(requesterRef, id = 100, 1),
+      Contains(requesterRef, id = 50, 2),
+      Remove(requesterRef, id = 10, 1),
+      Insert(requesterRef, id = 20, 2),
+      Contains(requesterRef, id = 80, 1),
+      Contains(requesterRef, id = 70, 2)
+    )
 
     val expectedReplies = List(
-      OperationFinished(id=10),
-      OperationFinished(id=20),
-      ContainsResult(id=50, false),
-      ContainsResult(id=70, true),
-      ContainsResult(id=80, false),
-      OperationFinished(id=100)
-      )
+      OperationFinished(id = 10),
+      OperationFinished(id = 20),
+      ContainsResult(id = 50, false),
+      ContainsResult(id = 70, true),
+      ContainsResult(id = 80, false),
+      OperationFinished(id = 100)
+    )
 
     verify(requester, ops, expectedReplies)
   }
